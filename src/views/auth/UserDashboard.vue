@@ -479,25 +479,14 @@ export default {
     ]);
 
     if (userOrderError) throw new Error("Failed to insert into user_orders.");
-
+this.$router.push("/dashboard");
     console.log("Product successfully purchased!");
     alert("Your purchase was successful!");
 
-    // **Don't navigate here**, just complete the purchase logic
-    return { success: true };
   } catch (error) {
     console.error("Error in buyProduct:", error.message);
     alert("Failed to complete the purchase. Please try again.");
     return { success: false, error: error.message };
-  }
-},
-async handleBuyProduct(product) {
-  const result = await this.buyProduct(product);
-  if (result.success) {
-    this.$router.push("/dashboard");
-  } else {
-    // Handle error (optional)
-    console.log(result.error);
   }
 },
     async fetchProducts() {
