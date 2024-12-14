@@ -285,330 +285,198 @@
     </v-main>
   </v-app>
 </template>
-
-<script>
+<script setup>
+import { ref, reactive, onMounted } from "vue";
 import { supabase } from "@/supabase";
+import { useRouter } from "vue-router";
 
-export default {
-  name: "UserDashboard",
-  data() {
-    return {
-      filteredProducts: [],
-      userOrders: [], // Store user orders
-      drawer: false,
-      isModalOpen: false,
-      isAddReviewModalOpen: false,
-      isEditModalOpen: false,
-      isFormValid: false,
-      editData: {
-        firstname: "",
-        lastname: "",
-      },
-      user: {
-        fullname: "",
-        phone: "",
-        email: "",
-      },
-      dialog: {
-        visible: false,
-        field: "",
-        value: "",
-        userId: null,
-      },
-      isWelcomeModalVisible: false, // Modal visibility state
-      rules: {
-        required: (value) => !!value || "This field is required.",
-      },
-    };
-  },
+const router = useRouter();
 
-  mounted() {
-    this.fetchUserDetails();
-    this.fetchProducts();
-    this.isWelcomeModalVisible = true;
-  },
+// Reactive state
+const filteredProducts = ref([]);
+const userOrders = ref([]);
+const drawer = ref(false);
+const isModalOpen = ref(false);
+const isAddReviewModalOpen = ref(false);
+const isEditModalOpen = ref(false);
+const isFormValid = ref(false);
+const isWelcomeModalVisible = ref(true);
 
-  methods: {
-    async openModal() {
-      try {
-        // Step 1: Fetch the currently authenticated user
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser();
-        if (authError || !user) throw new Error("User not authenticated.");
+const editData = reactive({
+  firstname: "",
+  lastname: "",
+});
 
-        // Step 2: Fetch user's info (users_info.id)
-        const { data: userInfo, error: userInfoError } = await supabase
-          .from("users_info")
-          .select("id")
-          .eq("auth_users_id", user.id)
-          .single();
+const user = reactive({
+  fullname: "",
+  phone: "",
+  email: "",
+});
 
-        if (userInfoError) throw new Error("Failed to fetch user info.");
-        const userId = userInfo.id;
+const dialog = reactive({
+  visible: false,
+  field: "",
+  value: "",
+  userId: null,
+});
 
-        // Step 3: Fetch all orders for the user
-        const { data: orders, error: ordersError } = await supabase
-          .from("orders")
-          .select("id, total_amount, created_at, user_orders(product_id, status)")
-          .eq("users_info_id", userId);
+const rules = {
+  required: (value) => !!value || "This field is required.",
+};
 
-        if (ordersError) throw new Error("Failed to fetch orders.");
-
-        // Step 4: Map the fetched data for easier rendering
-        this.userOrders = orders.map((order) => ({
-          id: order.id,
-          totalAmount: order.total_amount,
-          createdAt: order.created_at,
-          products: order.user_orders.map((uOrder) => ({
-            productId: uOrder.product_id,
-            status: uOrder.status,
-          })),
-        }));
-
-        // Step 5: Open the modal
-        this.isModalOpen = true;
-        console.log("Fetched orders:", this.userOrders);
-      } catch (error) {
-        console.error("Error fetching orders:", error.message);
-        alert("Failed to fetch orders. Please try again.");
-      }
-    },
-
-    async abortProduct(product) {
-      try {
-        // Step 1: Fetch the currently authenticated user
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser();
-        if (authError || !user) throw new Error("User not authenticated.");
-
-        // Step 2: Fetch user's info (users_info.id)
-        const { data: userInfo, error: userInfoError } = await supabase
-          .from("users_info")
-          .select("id")
-          .eq("auth_users_id", user.id)
-          .single();
-
-        if (userInfoError) throw new Error("Failed to fetch user info.");
-        const userId = userInfo.id;
-
-        // Step 3: Fetch the order_id from user_orders for the selected product
-        const { data: userOrderData, error: userOrderError } = await supabase
-          .from("user_orders")
-          .select("order_id")
-          .eq("product_id", product.id)
-          .single();
-
-        if (userOrderError || !userOrderData)
-          throw new Error("No order found for this product.");
-        const orderId = userOrderData.order_id;
-
-        // Step 4: Delete the record from user_orders table
-        const { error: deleteUserOrderError } = await supabase
-          .from("user_orders")
-          .delete()
-          .eq("order_id", orderId);
-
-        if (deleteUserOrderError)
-          throw new Error("Failed to delete order from user_orders.");
-
-        // Step 5: Delete the corresponding record from orders table
-        const { error: deleteOrderError } = await supabase
-          .from("orders")
-          .delete()
-          .eq("id", orderId);
-
-        if (deleteOrderError) throw new Error("Failed to delete order from orders.");
-
-        // Step 6: Update the UI
-        product.isBought = false; // Mark the product as not bought
-        alert("Order cancelled successfully!");
-        console.log("Order cancelled successfully.");
-      } catch (error) {
-        console.error("Error cancelling order:", error.message);
-        alert("Failed to cancel the order. Please try again.");
-      }
-    },
-
-    async buyProduct(product) {
+// Functions
+const fetchUserDetails = async () => {
   try {
-    // Step 1: Fetch the currently authenticated user
+    const { data, error } = await supabase
+      .from("users_info")
+      .select("id, firstname, lastname, email")
+      .single();
+
+    if (error) throw error;
+
+    user.fullname = ${data.firstname} ${data.lastname};
+    user.email = data.email;
+  } catch (err) {
+    console.error("Error fetching user details:", err.message);
+  }
+};
+
+const fetchProducts = async () => {
+  try {
+    const { data: products, error: productsError } = await supabase
+      .from("products")
+      .select("*");
+    if (productsError) throw productsError;
+
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("User not authenticated.");
 
-    // Step 2: Fetch the user's info (users_info.id) from 'users_info' table
     const { data: userInfo, error: userInfoError } = await supabase
       .from("users_info")
       .select("id")
-      .eq("auth_users_id", user.id) // Match with the authenticated user's ID
+      .eq("auth_users_id", user.id)
+      .single();
+    if (userInfoError) throw userInfoError;
+
+    const userId = userInfo.id;
+
+    const { data: userOrdersData, error: userOrdersError } = await supabase
+      .from("user_orders")
+      .select("product_id, status")
+      .eq("status", "BOUGHT");
+    if (userOrdersError) throw userOrdersError;
+
+    const boughtProducts = userOrdersData.map((order) => order.product_id);
+
+    filteredProducts.value = products.map((product) => ({
+      ...product,
+      isBought: boughtProducts.includes(product.id),
+    }));
+
+    console.log("Fetched products with status:", filteredProducts.value);
+  } catch (error) {
+    console.error("Error fetching products:", error.message);
+  }
+};
+
+const openModal = async () => {
+  try {
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("User not authenticated.");
+
+    const { data: userInfo, error: userInfoError } = await supabase
+      .from("users_info")
+      .select("id")
+      .eq("auth_users_id", user.id)
       .single();
 
     if (userInfoError) throw new Error("Failed to fetch user info.");
     const userId = userInfo.id;
 
-    // Step 3: Insert a new record into the 'orders' table
-    const { data: orderData, error: orderError } = await supabase
+    const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .insert([
-        {
-          users_info_id: userId,
-          total_amount: product.price,
-          created_at: new Date().toISOString(), // Current timestamp
-        },
-      ])
-      .select("id")
-      .single();
+      .select("id, total_amount, created_at, user_orders(product_id, status)")
+      .eq("users_info_id", userId);
 
-    if (orderError) throw new Error("Failed to create order.");
-    const orderId = orderData.id;
+    if (ordersError) throw new Error("Failed to fetch orders.");
 
-    // Step 4: Insert a new record into 'user_orders' table
-    const { error: userOrderError } = await supabase.from("user_orders").insert([
-      {
-        product_id: product.id,
-        order_id: orderId,
-        created_at: new Date().toISOString(),
-        status: "BOUGHT",
-      },
-    ]);
+    userOrders.value = orders.map((order) => ({
+      id: order.id,
+      totalAmount: order.total_amount,
+      createdAt: order.created_at,
+      products: order.user_orders.map((uOrder) => ({
+        productId: uOrder.product_id,
+        status: uOrder.status,
+      })),
+    }));
 
-    if (userOrderError) throw new Error("Failed to insert into user_orders.");
-this.$router.push("/dashboard");
-    console.log("Product successfully purchased!");
-    alert("Your purchase was successful!");
-
+    isModalOpen.value = true;
+    console.log("Fetched orders:", userOrders.value);
   } catch (error) {
-    console.error("Error in buyProduct:", error.message);
-    alert("Failed to complete the purchase. Please try again.");
-    return { success: false, error: error.message };
+    console.error("Error fetching orders:", error.message);
+    alert("Failed to fetch orders. Please try again.");
   }
-},
-    async fetchProducts() {
-      try {
-        // Step 1: Fetch all products
-        const { data: products, error: productsError } = await supabase
-          .from("products")
-          .select("*");
-        if (productsError) throw productsError;
-
-        // Step 2: Fetch current user
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser();
-        if (authError || !user) throw new Error("User not authenticated.");
-
-        // Step 3: Fetch user info (users_info.id)
-        const { data: userInfo, error: userInfoError } = await supabase
-          .from("users_info")
-          .select("id")
-          .eq("auth_users_id", user.id)
-          .single();
-        if (userInfoError) throw userInfoError;
-
-        const userId = userInfo.id;
-
-        // Step 4: Fetch user_orders for the current user
-        const { data: userOrders, error: userOrdersError } = await supabase
-          .from("user_orders")
-          .select("product_id, status")
-          .eq("status", "BOUGHT");
-        if (userOrdersError) throw userOrdersError;
-
-        const boughtProducts = userOrders.map((order) => order.product_id);
-
-        // Step 5: Add a flag `isBought` to each product
-        this.filteredProducts = products.map((product) => ({
-          ...product,
-          isBought: boughtProducts.includes(product.id),
-        }));
-
-        console.log("Fetched products with status:", this.filteredProducts);
-      } catch (error) {
-        console.error("Error fetching products:", error.message);
-      }
-    },
-
-    async fetchUserDetails() {
-      try {
-        const { data, error } = await supabase
-          .from("users_info")
-          .select("id, firstname, lastname, email")
-          .single();
-
-        if (error) throw error;
-
-        // Set user data
-        this.user = {
-          fullname: `${data.firstname} ${data.lastname}`,
-          email: data.email,
-        };
-      } catch (err) {
-        console.error("Error fetching user details:", err.message);
-      }
-    },
-
-    openEditModal() {
-      // Populate modal with current user data
-      this.editData.firstname = this.user.firstname;
-      this.editData.lastname = this.user.lastname;
-      this.isEditModalOpen = true;
-    },
-    async saveProfile() {
-      if (this.isFormValid) {
-        try {
-          await this.updateUserInfo(this.editData);
-          this.user.fullname = `${this.editData.firstname} ${this.editData.lastname}`;
-          this.isEditModalOpen = false;
-          alert("Profile updated successfully!");
-        } catch (error) {
-          console.error("Failed to update user info:", error.message);
-        }
-      }
-    },
-    async updateUserInfo(data) {
-      try {
-        const { data: userResponse, error: userError } = await supabase.auth.getUser();
-        if (userError || !userResponse?.user?.id) {
-          throw new Error("Failed to fetch user ID.");
-        }
-
-        const userId = userResponse.user.id;
-
-        const { error } = await supabase
-          .from("users_info")
-          .update({
-            firstname: data.firstname,
-            lastname: data.lastname,
-          })
-          .eq("auth_users_id", userId); // Ensure 'user_id' matches your table schema
-
-        if (error) throw error;
-      } catch (error) {
-        console.error("Error updating user info in Supabase:", error.message);
-        throw error;
-      }
-    },
-
-    async logout() {
-      try {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
-
-        this.$router.push("/");
-        console.log("User logged out successfully.");
-      } catch (error) {
-        console.error("Error logging out:", error.message);
-      }
-    },
-  },
 };
+
+const logout = async () => {
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+
+    router.push("/");
+    console.log("User logged out successfully.");
+  } catch (error) {
+    console.error("Error logging out:", error.message);
+  }
+};
+
+const saveProfile = async () => {
+  if (isFormValid.value) {
+    try {
+      await updateUserInfo(editData);
+      user.fullname = ${editData.firstname} ${editData.lastname};
+      isEditModalOpen.value = false;
+      alert("Profile updated successfully!");
+    } catch (error) {
+      console.error("Failed to update user info:", error.message);
+    }
+  }
+};
+
+const updateUserInfo = async (data) => {
+  try {
+    const { data: userResponse, error: userError } = await supabase.auth.getUser();
+    if (userError || !userResponse?.user?.id) {
+      throw new Error("Failed to fetch user ID.");
+    }
+
+    const userId = userResponse.user.id;
+
+    const { error } = await supabase
+      .from("users_info")
+      .update({
+        firstname: data.firstname,
+        lastname: data.lastname,
+      })
+      .eq("auth_users_id", userId);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Error updating user info in Supabase:", error.message);
+    throw error;
+  }
+};
+
+onMounted(() => {
+  fetchUserDetails();
+  fetchProducts();
+});
 </script>
 
 <style scoped>
