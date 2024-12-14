@@ -285,6 +285,7 @@
     </v-main>
   </v-app>
 </template>
+
 <script setup>
 import { ref, onMounted } from "vue";
 import { supabase } from "@/supabase";
@@ -295,130 +296,68 @@ const router = useRouter();
 // Reactive State
 const filteredProducts = ref([]);
 const userOrders = ref([]);
-const drawer = ref(false);
 const isModalOpen = ref(false);
-const isAddReviewModalOpen = ref(false);
 const isEditModalOpen = ref(false);
 const isFormValid = ref(false);
 const isWelcomeModalVisible = ref(false);
-const user = ref({
-  fullname: "",
-  phone: "",
-  email: "",
-});
-const editData = ref({
-  firstname: "",
-  lastname: "",
-});
-const dialog = ref({
-  visible: false,
-  field: "",
-  value: "",
-  userId: null,
-});
+const notificationMessage = ref({ message: "", color: "success", visible: false });
+const user = ref({ fullname: "", phone: "", email: "" });
+const editData = ref({ firstname: "", lastname: "" });
+
 const rules = {
   required: (value) => !!value || "This field is required.",
 };
 
-// Lifecycle Hook: Mounted
-onMounted(() => {
-  fetchUserDetails();
-  fetchProducts();
-  isWelcomeModalVisible.value = true;
+// Helper Functions
+const getCurrentUser = async () => {
+  const { data: authData, error } = await supabase.auth.getUser();
+  if (error || !authData.user) throw new Error("User not authenticated.");
+  return authData.user;
+};
+
+const fetchUserInfo = async (authUserId) => {
+  const { data, error } = await supabase
+    .from("users_info")
+    .select("id, firstname, lastname, email")
+    .eq("auth_users_id", authUserId)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// Lifecycle Hook
+onMounted(async () => {
+  try {
+    const authUser = await getCurrentUser();
+    const userInfo = await fetchUserInfo(authUser.id);
+    user.value = {
+      fullname: ${userInfo.firstname} ${userInfo.lastname},
+      email: userInfo.email,
+    };
+    await fetchProducts();
+    isWelcomeModalVisible.value = true;
+  } catch (error) {
+    console.error("Initialization error:", error.message);
+    router.push("/login");
+  }
 });
 
-const abortProduct = async (product) => {
-  try {
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) throw new Error("User not authenticated.");
-
-    const { data: userInfo, error: userInfoError } = await supabase
-      .from("users_info")
-      .select("id")
-      .eq("auth_users_id", user.id)
-      .single();
-
-    if (userInfoError) throw new Error("Failed to fetch user info.");
-    const userId = userInfo.id;
-
-    const { data: userOrderData, error: userOrderError } = await supabase
-      .from("user_orders")
-      .select("order_id")
-      .eq("product_id", product.id)
-      .single();
-
-    if (userOrderError || !userOrderData)
-      throw new Error("No order found for this product.");
-    const orderId = userOrderData.order_id;
-
-    const { error: deleteUserOrderError } = await supabase
-      .from("user_orders")
-      .delete()
-      .eq("order_id", orderId);
-
-    if (deleteUserOrderError) throw new Error("Failed to delete order from user_orders.");
-
-    const { error: deleteOrderError } = await supabase
-      .from("orders")
-      .delete()
-      .eq("id", orderId);
-
-    if (deleteOrderError) throw new Error("Failed to delete order from orders.");
-
-    product.isBought = false; // Update the UI
-    alert("Order cancelled successfully!");
-  } catch (error) {
-    console.error("Error cancelling order:", error.message);
-    alert("Failed to cancel the order. Please try again.");
-  }
-};
-
-// Methods
-const fetchUserDetails = async () => {
-  try {
-    const {
-      data: { user: authUser },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !authUser) throw new Error("User not authenticated.");
-
-    const { data, error } = await supabase
-      .from("users_info")
-      .select("id, firstname, lastname, email")
-      .eq("auth_users_id", authUser.id)
-      .single();
-
-    if (error) throw error;
-
-    user.value = {
-      fullname: ${data.firstname} ${data.lastname},
-      email: data.email,
-    };
-  } catch (err) {
-    console.error("Error fetching user details:", err.message);
-  }
-};
-
+// Fetch Data
 const fetchProducts = async () => {
   try {
-    const { data: products, error } = await supabase.from("products").select("*");
+    const { data: products, error: productError } = await supabase
+      .from("products")
+      .select("*");
+    if (productError) throw productError;
 
-    if (error) throw error;
-
-    // Fetch orders and merge bought status
-    const { data: userOrders, error: orderError } = await supabase
+    const { data: orders, error: orderError } = await supabase
       .from("user_orders")
       .select("product_id");
-
     if (orderError) throw orderError;
 
-    const boughtProductIds = userOrders.map((order) => order.product_id);
+    const boughtProductIds = orders.map((order) => order.product_id);
 
-    // Add isBought status to products
+    // Update product data with isBought status
     filteredProducts.value = products.map((product) => ({
       ...product,
       isBought: boughtProductIds.includes(product.id),
@@ -428,137 +367,110 @@ const fetchProducts = async () => {
   }
 };
 
-const openModal = async () => {
-  try {
-    const {
-      data: { user: authUser },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !authUser) throw new Error("User not authenticated.");
-
-    const { data: userInfo, error: userInfoError } = await supabase
-      .from("users_info")
-      .select("id")
-      .eq("auth_users_id", authUser.id)
-      .single();
-    if (userInfoError) throw userInfoError;
-
-    const userId = userInfo.id;
-
-    const { data: orders, error: ordersError } = await supabase
-      .from("orders")
-      .select("id, total_amount, created_at, user_orders(product_id, status)")
-      .eq("users_info_id", userId);
-
-    if (ordersError) throw ordersError;
-
-    userOrders.value = orders.map((order) => ({
-      id: order.id,
-      totalAmount: order.total_amount,
-      createdAt: order.created_at,
-      products: order.user_orders.map((uOrder) => ({
-        productId: uOrder.product_id,
-        status: uOrder.status,
-      })),
-    }));
-
-    isModalOpen.value = true;
-  } catch (error) {
-    console.error("Error fetching orders:", error.message);
-  }
-};
-
+// Actions
 const buyProduct = async (product) => {
   try {
-    const {
-      data: { user: authUser },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !authUser) throw new Error("User not authenticated.");
+    const authUser = await getCurrentUser();
+    const userInfo = await fetchUserInfo(authUser.id);
 
-    const { data: userInfo, error: userInfoError } = await supabase
-      .from("users_info")
-      .select("id")
-      .eq("auth_users_id", authUser.id)
-      .single();
-    if (userInfoError) throw userInfoError;
-
-    const userId = userInfo.id;
-
+    // Create new order
     const { data: orderData, error: orderError } = await supabase
       .from("orders")
       .insert([
         {
-          users_info_id: userId,
+          users_info_id: userInfo.id,
           total_amount: product.price,
           created_at: new Date().toISOString(),
         },
       ])
       .select("id")
       .single();
-
     if (orderError) throw orderError;
 
-    const orderId = orderData.id;
-
+    // Link product to the new order
     const { error: userOrderError } = await supabase.from("user_orders").insert([
       {
         product_id: product.id,
-        order_id: orderId,
+        order_id: orderData.id,
         created_at: new Date().toISOString(),
         status: "BOUGHT",
       },
     ]);
-
     if (userOrderError) throw userOrderError;
 
-    alert("Purchase successful!");
-
-    // Refetch products to update the isBought status
+    notify("Purchase successful!");
     await fetchProducts();
   } catch (error) {
-    console.error("Error in buyProduct:", error.message);
-    alert("Failed to complete the purchase. Please try again.");
+    console.error("Error buying product:", error.message);
+    notify("Failed to complete the purchase. Please try again.", "error");
+  }
+};
+const abortProduct = async (product) => {
+  try {
+    const authUser = await getCurrentUser();
+    // Removed userInfo as it is not used
+    await fetchUserInfo(authUser.id);
+
+    const { data: userOrder, error: userOrderError } = await supabase
+      .from("user_orders")
+      .select("order_id")
+      .eq("product_id", product.id)
+      .single();
+    if (userOrderError || !userOrder) throw new Error("No order found for this product.");
+
+    const { error: deleteUserOrderError } = await supabase
+      .from("user_orders")
+      .delete()
+      .eq("order_id", userOrder.order_id);
+    if (deleteUserOrderError) throw deleteUserOrderError;
+
+    const { error: deleteOrderError } = await supabase
+      .from("orders")
+      .delete()
+      .eq("id", userOrder.order_id);
+    if (deleteOrderError) throw deleteOrderError;
+
+    notify("Order cancelled successfully!");
+    await fetchProducts();
+  } catch (error) {
+    console.error("Error canceling order:", error.message);
+    notify("Failed to cancel the order. Please try again.", "error");
   }
 };
 
+// Profile Management
 const openEditModal = () => {
-  editData.value.firstname = user.value.firstname;
-  editData.value.lastname = user.value.lastname;
+  const [firstname, lastname] = user.value.fullname.split(" ");
+  editData.value.firstname = firstname || "";
+  editData.value.lastname = lastname || "";
   isEditModalOpen.value = true;
 };
 
 const saveProfile = async () => {
-  if (isFormValid.value) {
-    try {
-      await updateUserInfo(editData.value);
-      user.value.fullname = ${editData.value.firstname} ${editData.value.lastname};
-      isEditModalOpen.value = false;
-      alert("Profile updated successfully!");
-    } catch (error) {
-      console.error("Failed to update profile:", error.message);
-    }
+  if (!isFormValid.value) return;
+
+  try {
+    const authUser = await getCurrentUser();
+    await supabase
+      .from("users_info")
+      .update(editData.value)
+      .eq("auth_users_id", authUser.id);
+
+    user.value.fullname = ${editData.value.firstname} ${editData.value.lastname};
+    isEditModalOpen.value = false;
+    notify("Profile updated successfully!");
+  } catch (error) {
+    console.error("Error updating profile:", error.message);
+    notify("Failed to update profile. Please try again.", "error");
   }
 };
 
-const updateUserInfo = async (data) => {
-  const {
-    data: { user: authUser },
-    error: authError,
-  } = await supabase.auth.getUser();
-  if (authError || !authUser) throw new Error("User not authenticated.");
-
-  const { error } = await supabase
-    .from("users_info")
-    .update({
-      firstname: data.firstname,
-      lastname: data.lastname,
-    })
-    .eq("auth_users_id", authUser.id);
-
-  if (error) throw error;
+// Utility
+const notify = (message, color = "success") => {
+  notificationMessage.value = { message, color, visible: true };
 };
 
+// Logout
 const logout = async () => {
   try {
     const { error } = await supabase.auth.signOut();

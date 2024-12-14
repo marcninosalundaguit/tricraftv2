@@ -15,12 +15,11 @@ const isWelcomeModalVisible = ref(false);
 function onClick() {
   theme.value = theme.value === "light" ? "dark" : "light";
 }
-
 async function login() {
   try {
     errorMessage.value = ""; // Clear previous error messages
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.value,
       password: password.value,
     });
