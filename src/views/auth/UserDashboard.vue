@@ -484,7 +484,7 @@ export default {
         alert("Your purchase was successful!");
 
         // Reload the page after successful purchase
-        location.reload();
+        window.location.reload();
       } catch (error) {
         console.error("Error in buyProduct:", error.message);
         alert("Failed to complete the purchase. Please try again.");
