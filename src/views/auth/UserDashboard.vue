@@ -434,62 +434,72 @@ export default {
     },
 
     async buyProduct(product) {
-      try {
-        // Step 1: Fetch the currently authenticated user
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser();
-        if (authError || !user) throw new Error("User not authenticated.");
+  try {
+    // Step 1: Fetch the currently authenticated user
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("User not authenticated.");
 
-        // Step 2: Fetch the user's info (users_info.id) from 'users_info' table
-        const { data: userInfo, error: userInfoError } = await supabase
-          .from("users_info")
-          .select("id")
-          .eq("auth_users_id", user.id) // Match with the authenticated user's ID
-          .single();
+    // Step 2: Fetch the user's info (users_info.id) from 'users_info' table
+    const { data: userInfo, error: userInfoError } = await supabase
+      .from("users_info")
+      .select("id")
+      .eq("auth_users_id", user.id) // Match with the authenticated user's ID
+      .single();
 
-        if (userInfoError) throw new Error("Failed to fetch user info.");
-        const userId = userInfo.id;
+    if (userInfoError) throw new Error("Failed to fetch user info.");
+    const userId = userInfo.id;
 
-        // Step 3: Insert a new record into the 'orders' table
-        const { data: orderData, error: orderError } = await supabase
-          .from("orders")
-          .insert([
-            {
-              users_info_id: userId,
-              total_amount: product.price,
-              created_at: new Date().toISOString(), // Current timestamp
-            },
-          ])
-          .select("id")
-          .single();
+    // Step 3: Insert a new record into the 'orders' table
+    const { data: orderData, error: orderError } = await supabase
+      .from("orders")
+      .insert([
+        {
+          users_info_id: userId,
+          total_amount: product.price,
+          created_at: new Date().toISOString(), // Current timestamp
+        },
+      ])
+      .select("id")
+      .single();
 
-        if (orderError) throw new Error("Failed to create order.");
-        const orderId = orderData.id;
+    if (orderError) throw new Error("Failed to create order.");
+    const orderId = orderData.id;
 
-        // Step 4: Insert a new record into 'user_orders' table
-        const { error: userOrderError } = await supabase.from("user_orders").insert([
-          {
-            product_id: product.id,
-            order_id: orderId,
-            created_at: new Date().toISOString(),
-            status: "BOUGHT",
-          },
-        ]);
+    // Step 4: Insert a new record into 'user_orders' table
+    const { error: userOrderError } = await supabase.from("user_orders").insert([
+      {
+        product_id: product.id,
+        order_id: orderId,
+        created_at: new Date().toISOString(),
+        status: "BOUGHT",
+      },
+    ]);
 
-        if (userOrderError) throw new Error("Failed to insert into user_orders.");
+    if (userOrderError) throw new Error("Failed to insert into user_orders.");
 
-        console.log("Product successfully purchased!");
-        alert("Your purchase was successful!");
+    console.log("Product successfully purchased!");
+    alert("Your purchase was successful!");
 
-        // Reload the page after successful purchase
-        this.$router.push("/dashboard");
-      } catch (error) {
-        console.error("Error in buyProduct:", error.message);
-        alert("Failed to complete the purchase. Please try again.");
-      }
-    },
+    // **Don't navigate here**, just complete the purchase logic
+    return { success: true };
+  } catch (error) {
+    console.error("Error in buyProduct:", error.message);
+    alert("Failed to complete the purchase. Please try again.");
+    return { success: false, error: error.message };
+  }
+},
+async handleBuyProduct(product) {
+  const result = await this.buyProduct(product);
+  if (result.success) {
+    this.$router.push("/dashboard");
+  } else {
+    // Handle error (optional)
+    console.log(result.error);
+  }
+},
     async fetchProducts() {
       try {
         // Step 1: Fetch all products
